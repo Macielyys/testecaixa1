@@ -56,14 +56,14 @@
       </table>
     </div>
 
-    <!-- Total e PDF -->
+    <!-- Total + pdf -->
     <div class="d-flex justify-content-between align-items-center mt-4">
       <h5 id="totalVendas">Total: R$ 0,00</h5>
       <button onclick="gerarPDF()" class="btn btn-danger">Gerar PDF</button>
     </div>
   </div>
 
-  <!-- Firebase + Script -->
+  <!-- Firebase + dcript -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
     import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
@@ -168,7 +168,7 @@
       doc.save("relatorio-vendas.pdf");
     }
 
-    // Atualização automática dos filtros
+    // Atualização automática dos filtors (para nao clicar em em nada no tablet - já aber)
     document.getElementById("filtroDataInicial").addEventListener("change", carregarRelatorios);
     document.getElementById("filtroDataFinal").addEventListener("change", carregarRelatorios);
     document.getElementById("filtroFormaPagamento").addEventListener("change", carregarRelatorios);
