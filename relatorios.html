@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Relatórios de Vendas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+  <!-- jsPDF e autoTable -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body class="bg-light">
+
+  <div class="container py-4">
+    <h2 class="mb-4">Relatórios de Vendas</h2>
+
+    <!-- filtros -->
+    <div class="row mb-3">
+      <div class="col-md-3">
+        <label>Data Inicial:</label>
+        <input type="date" id="filtroDataInicial" class="form-control"/>
+      </div>
+      <div class="col-md-3">
+        <label>Data Final:</label>
+        <input type="date" id="filtroDataFinal" class="form-control"/>
+      </div>
+      <div class="col-md-3">
+        <label>Forma de Pagamento:</label>
+        <select id="filtroFormaPagamento" class="form-control">
+          <option value="">Todas</option>
+          <option value="Dinheiro">Dinheiro</option>
+          <option value="Pix">Pix</option>
+          <option value="Débito">Débito</option>
+          <option value="Crédito">Crédito</option>
+          <option value="Permuta">Permuta</option>
+        </select>
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <button onclick="carregarRelatorios()" class="btn btn-primary w-100">Filtrar</button>
+      </div>
+    </div>
+
+    <!-- Tabela -->
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped" id="tabelaRelatorios">
+        <thead class="table-dark">
+          <tr>
+            <th>Data</th>
+            <th>Forma de Pagamento</th>
+            <th>Itens</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Total e PDF -->
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <h5 id="totalVendas">Total: R$ 0,00</h5>
+      <button onclick="gerarPDF()" class="btn btn-danger">Gerar PDF</button>
+    </div>
+  </div>
+
+  <!-- Firebase + Script -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA0R7KnyGzZtnGuph7IP9Kx2RyWWBoB2lE",
+      authDomain: "gm1caixa.firebaseapp.com",
+      projectId: "gm1caixa",
+      storageBucket: "gm1caixa.firebasestorage.app",
+      messagingSenderId: "918400052363",
+      appId: "1:918400052363:web:5bcf15dba7b7ae6a30388e",
+      measurementId: "G-2HT8E6Q9ZG"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    async function carregarRelatorios() {
+      const dataInicialInput = document.getElementById("filtroDataInicial").value;
+      const dataFinalInput = document.getElementById("filtroDataFinal").value;
+      const formaPagamento = document.getElementById("filtroFormaPagamento").value;
+
+      const dataInicial = dataInicialInput ? new Date(dataInicialInput + "T00:00:00") : null;
+      const dataFinal = dataFinalInput ? new Date(dataFinalInput + "T23:59:59") : null;
+
+      const querySnapshot = await getDocs(collection(db, "vendas"));
+      const tabela = document.querySelector("#tabelaRelatorios tbody");
+      tabela.innerHTML = "";
+
+      let total = 0;
+
+      querySnapshot.forEach((doc) => {
+        const venda = doc.data();
+        const dataVenda = new Date(venda.data);
+
+        const dentroDoPeriodo =
+          (!dataInicial || dataVenda >= dataInicial) &&
+          (!dataFinal || dataVenda <= dataFinal);
+
+        const formaIgual = formaPagamento ? venda.formaPagamento === formaPagamento : true;
+
+        if (dentroDoPeriodo && formaIgual) {
+          const linha = document.createElement("tr");
+
+          const dataFormatada = dataVenda.toLocaleString("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          const itens = venda.itens.map((item) => `${item.nome} x${item.quantidade}`).join(", ");
+          const valor = venda.itens.reduce((acc, i) => acc + i.preco * i.quantidade, 0);
+
+          linha.innerHTML = `
+            <td>${dataFormatada}</td>
+            <td>${venda.formaPagamento}</td>
+            <td>${itens}</td>
+            <td>R$ ${valor.toFixed(2)}</td>
+          `;
+
+          total += valor;
+          tabela.appendChild(linha);
+        }
+      });
+
+      document.getElementById("totalVendas").textContent = `Total: R$ ${total.toFixed(2)}`;
+    }
+
+    // GERAÇÃO DO PDF
+    window.gerarPDF = function gerarPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFontSize(16);
+      doc.text("Relatório de Vendas", 14, 20);
+
+      const tabela = document.querySelector("#tabelaRelatorios");
+      const linhas = tabela.querySelectorAll("tbody tr");
+
+      const dados = Array.from(linhas).map(linha => {
+        const colunas = linha.querySelectorAll("td");
+        return [
+          colunas[0].textContent,
+          colunas[1].textContent,
+          colunas[2].textContent,
+          colunas[3].textContent,
+        ];
+      });
+
+      doc.autoTable({
+        head: [["Data", "Forma de Pagamento", "Itens", "Total"]],
+        body: dados,
+        startY: 30,
+        styles: { fontSize: 10 },
+      });
+
+      const totalTexto = document.getElementById("totalVendas").textContent;
+      doc.text(totalTexto, 14, doc.lastAutoTable.finalY + 10);
+
+      doc.save("relatorio-vendas.pdf");
+    }
+
+    // Atualização automática dos filtros
+    document.getElementById("filtroDataInicial").addEventListener("change", carregarRelatorios);
+    document.getElementById("filtroDataFinal").addEventListener("change", carregarRelatorios);
+    document.getElementById("filtroFormaPagamento").addEventListener("change", carregarRelatorios);
+
+    window.onload = carregarRelatorios;
+  </script>
+
+</body>
+</html>
