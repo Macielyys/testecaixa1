@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Teste caixa</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<style>
+  body { background: #f7f7f7; }
+  .product-card { transition: transform 0.2s; cursor: pointer; }
+  .product-card:hover { transform: scale(1.03); }
+  .product-img { height: 200px; object-fit: cover; }
+  .badge-cart { background: red; color: white; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-light bg-light px-4">
+  <a class="navbar-brand" href="#">Logo</a>
+  <button class="btn btn-outline-primary" data-bs-toggle="offcanvas" data-bs-target="#cartCanvas">
+    Carrinho <span class="badge badge-cart" id="cart-count">0</span>
+  </button>
+</nav>
+
+<div class="container py-4">
+
+  <h2>Adicionar Produto</h2>
+  <form id="addProductForm" class="mb-5">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <input type="text" class="form-control" id="nome" placeholder="Nome do Produto" required />
+      </div>
+      <div class="col-md-2">
+        <input type="text" class="form-control" id="codigo" placeholder="Código" required />
+      </div>
+      <div class="col-md-3">
+        <input type="text" class="form-control" id="marca" placeholder="Marca" required />
+      </div>
+      <div class="col-md-2">
+        <input type="number" step="0.01" min="0" class="form-control" id="preco" placeholder="Preço R$" required />
+      </div>
+      <div class="col-md-1">
+        <input type="number" min="0" class="form-control" id="estoque" placeholder="Estoque" required />
+      </div>
+    </div>
+    <div class="my-3">
+      <input type="url" class="form-control" id="imagem" placeholder="URL da Imagem" required />
+    </div>
+    <div class="mb-3">
+      <textarea class="form-control" id="descricao" rows="2" placeholder="Descrição" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-success">Adicionar Produto</button>
+    <div id="status" class="mt-2"></div>
+  </form>
+
+  <hr />
+
+  <h2>Produtos</h2>
+  <div class="row" id="product-list"></div>
+
+</div>
+
+<div class="modal fade" id="productModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <img id="modalImage" src="" class="img-fluid mb-3" />
+        <p id="modalDescription"></p>
+        <p><strong>Marca:</strong> <span id="modalBrand"></span></p>
+        <p><strong>Código:</strong> <span id="modalCode"></span></p>
+        <p><strong>Preço:</strong> R$ <span id="modalPrice"></span></p>
+        <p><strong>Estoque:</strong> <span id="modalStock"></span></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="modalAddToCart">Adicionar ao Carrinho</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Carrinho -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="cartCanvas">
+  <div class="offcanvas-header">
+    <h5>Carrinho</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body d-flex flex-column">
+    <div id="cart-items" class="flex-grow-1 overflow-auto mb-3">
+      <p>Nenhum item no carrinho.</p>
+    </div>
+    <div>
+      <h5>Total: R$ <span id="cart-total">0.00</span></h5>
+      <button class="btn btn-success w-100" id="finalizarCompraBtn" disabled>Finalizar Compra</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
+  import {
+    getFirestore, collection, addDoc, getDocs, doc, updateDoc
+  } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+  // Configufacoa firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyA0R7KnyGzZtnGuph7IP9Kx2RyWWBoB2lE",
+    authDomain: "gm1caixa.firebaseapp.com",
+    projectId: "gm1caixa",
+    storageBucket: "gm1caixa.appspot.com",
+    messagingSenderId: "918400052363",
+    appId: "1:918400052363:web:5bcf15dba7b7ae6a30388e",
+    measurementId: "G-2HT8E6Q9ZG"
+  };
+
+  // inicializa o fire
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const db = getFirestore(app);
+
+  let produtos = [];
+  let cart = [];
+
+  const productList = document.getElementById("product-list");
+  const statusDiv = document.getElementById("status");
+  const form = document.getElementById("addProductForm");
+  const cartCount = document.getElementById("cart-count");
+  const cartItems = document.getElementById("cart-items");
+  const cartTotal = document.getElementById("cart-total");
+  const finalizarCompraBtn = document.getElementById("finalizarCompraBtn");
+
+  // modal dso elementos
+  const modal = new bootstrap.Modal(document.getElementById("productModal"));
+  const modalTitle = document.getElementById("modalTitle");
+  const modalDescription = document.getElementById("modalDescription");
+  const modalBrand = document.getElementById("modalBrand");
+  const modalPrice = document.getElementById("modalPrice");
+  const modalImage = document.getElementById("modalImage");
+  const modalAddToCart = document.getElementById("modalAddToCart");
+  const modalStock = document.getElementById("modalStock");
+  const modalCode = document.getElementById("modalCode");
+
+  // Carregar produtos do Firestore
+  async function carregarProdutos() {
+    productList.innerHTML = "<p>Carregando produtos...</p>";
+    produtos = [];
+    try {
+      const querySnapshot = await getDocs(collection(db, "produtos"));
+      querySnapshot.forEach(docSnap => {
+        produtos.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      renderProdutos();
+    } catch (error) {
+      productList.innerHTML = `<p class="text-danger">Erro ao carregar produtos: ${error.message}</p>`;
+    }
+  }
+
+  // renderizar produtos
+  function renderProdutos() {
+    productList.innerHTML = "";
+    if (produtos.length === 0) {
+      productList.innerHTML = "<p>Nenhum produto disponível.</p>";
+      return;
+    }
+    produtos.forEach(prod => {
+      const col = document.createElement("div");
+      col.className = "col-md-4 mb-4";
+      col.innerHTML = `
+        <div class="card product-card" data-id="${prod.id}">
+          <img src="${prod.imagem}" class="card-img-top product-img" />
+          <div class="card-body">
+            <h5 class="card-title">${prod.nome}</h5>
+            <p class="card-text">R$ ${prod.preco.toFixed(2)}</p>
+            <button class="btn btn-outline-primary" data-id="${prod.id}">Ver Detalhes</button>
+            <p class="mt-2"><small><strong>Estoque:</strong> ${prod.estoque}</small></p>
+          </div>
+        </div>
+      `;
+      productList.appendChild(col);
+    });
+
+    // eventos botoa detalhes
+    document.querySelectorAll(".btn-outline-primary").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id");
+        const prod = produtos.find(p => p.id === id);
+        if (prod) mostrarDetalhes(prod);
+      });
+    });
+  }
+
+  // mostrar modal detalhes
+  function mostrarDetalhes(prod) {
+    modalTitle.textContent = prod.nome;
+    modalDescription.textContent = prod.descricao;
+    modalBrand.textContent = prod.marca;
+    modalPrice.textContent = prod.preco.toFixed(2);
+    modalImage.src = prod.imagem;
+    modalStock.textContent = prod.estoque;
+    modalCode.textContent = prod.codigo;
+    modalAddToCart.disabled = prod.estoque <= 0;
+    modalAddToCart.textContent = prod.estoque <= 0 ? "Indisponível" : "Adicionar ao Carrinho";
+
+    modalAddToCart.onclick = () => {
+      adicionarAoCarrinho(prod);
+      modal.hide();
+    };
+
+    modal.show();
+  }
+
+  // Adicionar ao carrinho
+  function adicionarAoCarrinho(prod) {
+    const item = cart.find(i => i.id === prod.id);
+    if (item) {
+      if (item.quantidade < prod.estoque) {
+        item.quantidade++;
+      } else {
+        alert("Estoque insuficiente!");
+      }
+    } else {
+      cart.push({ ...prod, quantidade: 1 });
+    }
+    atualizarCarrinho();
+  }
+
+  // atualizar carrinho
+  function atualizarCarrinho() {
+    cartCount.textContent = cart.reduce((acc, item) => acc + item.quantidade, 0);
+
+    if (cart.length === 0) {
+      cartItems.innerHTML = "<p>Nenhum item no carrinho.</p>";
+      finalizarCompraBtn.disabled = true;
+      cartTotal.textContent = "0.00";
+      return;
+    }
+
+    finalizarCompraBtn.disabled = false;
+
+    const list = document.createElement("ul");
+    list.className = "list-group";
+    cartItems.innerHTML = "";
+    cart.forEach(item => {
+      const li = document.createElement("li");
+      li.className = "list-group-item d-flex justify-content-between align-items-center";
+      li.innerHTML = `
+        ${item.nome} (x${item.quantidade}) <span>R$ ${(item.preco * item.quantidade).toFixed(2)}</span>
+        <button class="btn btn-sm btn-danger ms-2">Remover</button>
+      `;
+      li.querySelector("button").onclick = () => {
+        removerDoCarrinho(item.id);
+      };
+      list.appendChild(li);
+    });
+    cartItems.appendChild(list);
+
+    const total = cart.reduce((acc, item) => acc + item.preco * item.quantidade, 0);
+    cartTotal.textContent = total.toFixed(2);
+  }
+
+  // remover do carrinho
+  function removerDoCarrinho(id) {
+    cart = cart.filter(item => item.id !== id);
+    atualizarCarrinho();
+  }
+
+  // finalizar compra
+  finalizarCompraBtn.addEventListener("click", () => {
+    criarModalPagamento();
+  });
+
+  // modal pagamento
+  function criarModalPagamento() {
+    const modalPagHTML = `
+      <div class="modal fade" id="pagamentoModal" tabindex="-1">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Finalizar Compra</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <label for="formaPagamento" class="form-label">Forma de Pagamento</label>
+              <select id="formaPagamento" class="form-select">
+                <option value="Pix">Pix</option>
+                <option value="Permuta">Permuta</option>
+                <option value="Crédito">Crédito</option>
+                <option value="Débito">Débito</option>
+              </select>
+            </div>
+            <div class="modal-footer">
+              <button id="confirmarCompraBtn" class="btn btn-success">Confirmar Compra</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML("beforeend", modalPagHTML);
+    const pagamentoModal = new bootstrap.Modal(document.getElementById("pagamentoModal"));
+    pagamentoModal.show();
+
+    document.getElementById("confirmarCompraBtn").onclick = async () => {
+      const formaPagamento = document.getElementById("formaPagamento").value;
+      await finalizarCompra(formaPagamento);
+      pagamentoModal.hide();
+      document.getElementById("pagamentoModal").remove();
+    };
+  }
+
+  // finalizar compra =  atualizar estoque, salvar venda, gerar recibo PDF
+  async function finalizarCompra(formaPagamento) {
+    if (cart.length === 0) return alert("Carrinho vazio!");
+
+    try {
+      // Atualizar estoque no Firestore
+      for (const item of cart) {
+        const prodRef = doc(db, "produtos", item.id);
+        const novoEstoque = item.estoque - item.quantidade;
+        if (novoEstoque < 0) throw new Error(`Estoque insuficiente para ${item.nome}`);
+        await updateDoc(prodRef, { estoque: novoEstoque });
+      }
+
+      // Salvar a venda (final)
+      const venda = {
+        itens: cart.map(({ id, nome, preco, quantidade }) => ({ id, nome, preco, quantidade })),
+        total: cart.reduce((acc, item) => acc + item.preco * item.quantidade, 0),
+        formaPagamento,
+        data: new Date().toISOString()
+      };
+      await addDoc(collection(db, "vendas"), venda);
+
+      // recibo PDF
+      gerarReciboPDF(venda);
+
+      // limpar o carrinho (remove a lista automaticamentw)
+      cart = [];
+      atualizarCarrinho();
+      alert("Compra finalizada com sucesso!");
+
+      // recarregar produtos (atualizar estoque)
+      carregarProdutos();
+    } catch (error) {
+      alert("Erro ao finalizar compra: " + error.message);
+    }
+  }
+
+  // Gerar recibo PDF com js(PDF) - salvar no tablet e imprimir
+  function gerarReciboPDF(venda) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.text("Recibo de Compra", 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Data: ${new Date(venda.data).toLocaleString()}`, 14, 30);
+    doc.text(`Forma de Pagamento: ${venda.formaPagamento}`, 14, 38);
+    doc.text("Itens:", 14, 46);
+
+    let y = 54;
+    venda.itens.forEach(item => {
+      doc.text(`${item.nome} (x${item.quantidade}) - R$ ${(item.preco * item.quantidade).toFixed(2)}`, 14, y);
+      y += 8;
+    });
+
+    doc.text(`Total: R$ ${venda.total.toFixed(2)}`, 14, y + 10);
+    doc.save(`recibo_${new Date().toISOString()}.pdf`);
+  }
+
+  // adicionar produto pelo formulário
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const novoProduto = {
+      nome: form.nome.value.trim(),
+      codigo: form.codigo.value.trim(),
+      marca: form.marca.value.trim(),
+      preco: parseFloat(form.preco.value),
+      estoque: parseInt(form.estoque.value),
+      imagem: form.imagem.value.trim(),
+      descricao: form.descricao.value.trim()
+    };
+
+    try {
+      await addDoc(collection(db, "produtos"), novoProduto);
+      statusDiv.textContent = "Produto adicionado com sucesso!";
+      statusDiv.style.color = "green";
+      form.reset();
+      carregarProdutos();
+    } catch (error) {
+      statusDiv.textContent = "Erro ao adicionar produto: " + error.message;
+      statusDiv.style.color = "red";
+    }
+  });
+
+  // Inicializar
+  carregarProdutos();
+  atualizarCarrinho();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+</body>
+</html>
